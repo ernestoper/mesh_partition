@@ -3,6 +3,7 @@
 #include <sstream>
 #include <cstdlib>
 #include <iomanip>
+#include <fstream>
 #include <cmath>
 #include <cfloat>
 #include <limits>
@@ -11,8 +12,6 @@
 #include <stdio.h> // for binary output
 
 #include "Node.h"
-#include "Edge.h"
-#include "Elem.h"
 
 //#define BUILD_MESH_EDGE
 
@@ -23,8 +22,6 @@
 namespace Mesh_Group
 {
 using namespace std;
-using namespace Math_Group;
-
 
 Mesh::Mesh(bool quad)
 {
@@ -38,27 +35,21 @@ Mesh::Mesh(bool quad)
 
 Mesh::~Mesh()
 {
-   long i;
+   MyInt i;
    // Nodes
-   for(i=0; i<(long)node_vector.size(); i++)
+   for(i=0; i<(MyInt)node_vector.size(); i++)
       delete node_vector[i];
    node_vector.clear();
-   // Edges
-#ifdef BUILD_MESH_EDGE
-   for(i=0; i<(long)edge_vector.size(); i++)
-      delete edge_vector[i];
-   edge_vector.clear();
-#endif
 
 #ifdef BUILD_MESH_FACE
    // Surface faces
-   for(i=0; i<(long)face_vector.size(); i++)
+   for(i=0; i<(MyInt)face_vector.size(); i++)
       delete face_vector[i];
    face_vector.clear();
 #endif
 
    // Element
-   for(i=0; i<(long)elem_vector.size(); i++)
+   for(i=0; i<(MyInt)elem_vector.size(); i++)
       delete elem_vector[i];
    elem_vector.clear();
 }
@@ -164,24 +155,13 @@ void Mesh::ConstructGrid()
 
    int faceIndex_loc0[10];
    int faceIndex_loc[10];
-   vec<Node*> e_nodes0(20);
-   long node_index_glb[20];
-   long node_index_glb0[20];
+   MyInt node_index_glb[20];
+   MyInt node_index_glb0[20];
 
-#ifdef BUILD_MESH_EDGE
-   int nedges0, nedges;
-   int edgeIndex_loc0[3];
-   int edgeIndex_loc[3];
-   vec<int> Edge_Orientation(15);
-   vec<Edge*> Edges(15);
-   vec<Edge*> Edges0(15);
-   Edge_Orientation = 1;
-#endif
-   vec<Elem*> Neighbors(15);
-   vec<Elem*> Neighbors0(15);
+   Node **e_nodes0;
+   Elem **Neighbors;
+   Elem **Neighbors0;
 
-   vec<Node*> e_edgeNodes0(3);
-   vec<Node*> e_edgeNodes(3);
    Elem* thisElem0=NULL;
    Elem* thisElem=NULL;
 
@@ -190,8 +170,8 @@ void Mesh::ConstructGrid()
 
    //Elem->nodes not initialized
 
-   e_size = (long)elem_vector.size();
-   NodesNumber_Linear= (long)node_vector.size();
+   e_size = (MyInt)elem_vector.size();
+   NodesNumber_Linear= (MyInt)node_vector.size();
 
    //----------------------------------------------------------------------
    // set neighbors of node
@@ -203,11 +183,14 @@ void Mesh::ConstructGrid()
    for(e=0; e<e_size; e++)
    {
       thisElem0 = elem_vector[e];
-      nnodes0 = thisElem0->nnodes; // Number of nodes for linear element
+      nnodes0 = thisElem0->getNodesNumber(); // Number of nodes for linear element
       thisElem0->getNodeIndeces(node_index_glb0);
-      thisElem0->getNeighbors(Neighbors0);
+
+      e_nodes0 = thisElem0->getNodes();
       for(i=0; i<nnodes0; i++) // Nodes
          e_nodes0[i] = node_vector[node_index_glb0[i]];
+
+      Neighbors0 = thisElem0->getNeighbors();
       m0 = thisElem0->getFacesNumber();
       // neighbors
       for(i=0; i<m0; i++) // Faces
@@ -215,6 +198,7 @@ void Mesh::ConstructGrid()
          if(Neighbors0[i])
             continue;
          n0 = thisElem0->getElementFaceNodes(i, faceIndex_loc0);
+
          done = false;
          for(k=0; k<n0; k++)
          {
@@ -224,15 +208,19 @@ void Mesh::ConstructGrid()
                const size_t ee = e_nodes0[faceIndex_loc0[k]]->ElementsRelated[ei];
                if(ee==e)
                   continue;
+
                thisElem = elem_vector[ee];
                thisElem->getNodeIndeces(node_index_glb);
-               thisElem->getNeighbors(Neighbors);
+               Neighbors = thisElem->getNeighbors();
                m = thisElem->getFacesNumber();
 
                for(ii=0; ii<m; ii++) // Faces
                {
                   n = thisElem->getElementFaceNodes(ii, faceIndex_loc);
                   if(n0!=n)
+                     continue;
+
+                  if(Neighbors0[ii])
                      continue;
 
                   counter = 0;
@@ -252,86 +240,23 @@ void Mesh::ConstructGrid()
                   {
                      Neighbors0[i] = thisElem;
                      Neighbors[ii] = thisElem0;
-                     thisElem->setNeighbor(ii, thisElem0);
                      done = true;
                      break;
                   }
                }
-               if(done) break;
+
+               if(done)
+                  break;
             }
-            if(done) break;
+
+            if(done)
+               break;
          }
       }
-      thisElem0->setNeighbors(Neighbors0);
-
-#ifdef BUILD_MESH_EDGE
-      // --------------------------------
-      // Edges
-      nedges0 = thisElem0->getEdgesNumber();
-      thisElem0->getEdges(Edges0);
-      for(i=0; i<nedges0; i++)
-      {
-         thisElem0->getLocalIndices_EdgeNodes(i, edgeIndex_loc0);
-         // Check neighbors
-         done = false;
-         for(k=0; k<2; k++)
-         {
-            e_size_l = (long)e_nodes0[edgeIndex_loc0[k]]->ElementsRelated.size();
-            for(ei=0; ei<e_size_l; ei++)
-            {
-               ee = e_nodes0[edgeIndex_loc0[k]]->ElementsRelated[ei];
-               if(ee==e) continue;
-               thisElem = elem_vector[ee];
-               thisElem->getNodeIndeces(node_index_glb);
-               nedges = thisElem->getEdgesNumber();
-               thisElem->getEdges(Edges);
-               // Edges of neighbors
-               for(ii=0; ii<nedges; ii++)
-               {
-                  thisElem->getLocalIndices_EdgeNodes(ii, edgeIndex_loc);
-                  if((  node_index_glb0[edgeIndex_loc0[0]]==node_index_glb[edgeIndex_loc[0]]
-                        &&node_index_glb0[edgeIndex_loc0[1]]==node_index_glb[edgeIndex_loc[1]])
-                        ||(  node_index_glb0[edgeIndex_loc0[0]]==node_index_glb[edgeIndex_loc[1]]
-                             &&node_index_glb0[edgeIndex_loc0[1]]==node_index_glb[edgeIndex_loc[0]]) )
-                  {
-                     if(Edges[ii])
-                     {
-                        Edges0[i] = Edges[ii];
-                        Edges[ii]->getNodes(e_edgeNodes);
-                        if(  node_index_glb0[edgeIndex_loc0[0]]==e_edgeNodes[1]->getIndex()
-                              && node_index_glb0[edgeIndex_loc0[1]]==e_edgeNodes[0]->getIndex())
-                           Edge_Orientation[i] = -1;
-                        done = true;
-                        break;
-                     }
-                  }
-               } //  for(ii=0; ii<nedges; ii++)
-               if(done) break;
-            } // for(ei=0; ei<e_size_l; ei++)
-            if(done) break;
-         }//for(k=0;k<2;k++)
-         if(!done) // new edges and new node
-         {
-            Edges0[i] = new Edge((long)edge_vector.size());
-            Edges0[i]->setOrder(false);
-            e_edgeNodes0[0] = e_nodes0[edgeIndex_loc0[0]];
-            e_edgeNodes0[1] = e_nodes0[edgeIndex_loc0[1]];
-            e_edgeNodes0[2] = NULL;
-            Edges0[i]->setNodes(e_edgeNodes0);
-            edge_vector.push_back(Edges0[i]);
-         } // new edges
-      } //  for(i=0; i<nedges0; i++)
-      //
-      // set edges nodes
-      thisElem0->setEdges_Orientation(Edge_Orientation);
-      thisElem0->setEdges(Edges0);
-
-#endif  //BUILD_MESH_EDGE
 
       // set nodes
       thisElem0->setOrder(false);
-      // Resize is true
-      thisElem0->setNodes(e_nodes0, true);
+      //
    }// Over elements
 
    // set faces on surfaces and others
@@ -372,9 +297,11 @@ void Mesh::ConstructGrid()
       // Compute volume meanwhile
       //thisElem0->ComputeVolume();
 
-      if(thisElem0->getElementType() == line) continue; // line element
+      if(thisElem0->getElementType() == line)
+         continue; // line element
+
       thisElem0->getNodeIndeces(node_index_glb0);
-      thisElem0->getNeighbors(Neighbors0);
+      Neighbors0 = thisElem0->getNeighbors();
       m0 = thisElem0->getFacesNumber();
 
 #ifdef BUILD_MESH_FACE
@@ -383,7 +310,7 @@ void Mesh::ConstructGrid()
       {
          if(Neighbors0[i])
             continue;
-         Elem* newFace = new Elem((long)face_vector.size(), thisElem0, i);
+         Elem* newFace = new Elem((MyInt)face_vector.size(), thisElem0, i);
 //          thisElem0->boundary_type='B';
          thisElem0->no_faces_on_surface++;
          face_vector.push_back(newFace);
@@ -393,7 +320,7 @@ void Mesh::ConstructGrid()
       thisElem0->setNeighbors(Neighbors0);
 
    }
-   NodesNumber_Quadratic= (long)node_vector.size();
+   NodesNumber_Quadratic= (MyInt)node_vector.size();
    if((msh_no_hexs+msh_no_tets+msh_no_pris+msh_no_pyra)>0) max_ele_dim=3;
    else if((msh_no_quad+msh_no_tris)>0) max_ele_dim=2;
    else max_ele_dim=1;
@@ -437,19 +364,6 @@ void Mesh::ConstructGrid()
    // For sparse matrix
    ConnectedNodes(false);
    //
-   e_nodes0.resize(0);
-
-#ifdef BUILD_MESH_EDGE
-   Edge_Orientation.resize(0);
-   Edges.resize(0);
-   Edges0.resize(0);
-   e_edgeNodes0.resize(0);
-   e_edgeNodes.resize(0);
-#endif
-
-   Neighbors.resize(0);
-   Neighbors0.resize(0);
-
    finish = clock();
    cout<<"\nCPU time elapsed in constructing topology of grids: "
        <<(double)(finish - start) / CLOCKS_PER_SEC<<"s"<<endl<<endl;
@@ -475,21 +389,26 @@ void Mesh::GenerateHighOrderNodes()
 
    //
    Node *aNode=NULL;
-   vec<Node*> e_nodes0(20);
+   Node **e_nodes0;
    Elem *thisElem0=NULL;
    Elem *thisElem=NULL;
-#ifdef BUILD_MESH_EDGE
-   Edge *thisEdge0=NULL;
-   Edge *thisEdge=NULL;
-#endif
+
    //----------------------------------------------------------------------
    // Loop over elements
    e_size = elem_vector.size();
+
+   for(e=0; e<e_size; e++)
+   {
+      elem_vector[e]->Marking(false);
+   }
+
    for(e=0; e<e_size; e++)
    {
       thisElem0 = elem_vector[e];
-      nnodes0 = thisElem0->nnodes; // Number of nodes for linear element
+      nnodes0 = thisElem0->getNodesNumber(); // Number of nodes for linear element
 //      thisElem0->GetNodeIndeces(node_index_glb0);
+
+      e_nodes0 = thisElem0->getNodes();
       for(i=0; i<nnodes0; i++) // Nodes
          e_nodes0[i] = thisElem0->getNode(i);
       // --------------------------------
@@ -499,10 +418,6 @@ void Mesh::GenerateHighOrderNodes()
       // Check if there is any neighbor that has new middle points
       for(i=0; i<nedges0; i++)
       {
-#ifdef BUILD_MESH_EDGE
-         thisEdge0 = thisElem0->getEdge(i);
-#endif
-
          thisElem0->getLocalIndices_EdgeNodes(i, edgeIndex_loc0);
          const size_t ena0 = thisElem0->getNodeIndex(edgeIndex_loc0[0]);
          const size_t ena1 = thisElem0->getNodeIndex(edgeIndex_loc0[1]);
@@ -510,7 +425,7 @@ void Mesh::GenerateHighOrderNodes()
          done = false;
          for(k=0; k<2; k++)
          {
-            e_size_l = (long)e_nodes0[edgeIndex_loc0[k]]->ElementsRelated.size();
+            e_size_l = (MyInt)e_nodes0[edgeIndex_loc0[k]]->ElementsRelated.size();
             for(ei=0; ei<e_size_l; ei++)
             {
                const size_t ee = e_nodes0[edgeIndex_loc0[k]]->ElementsRelated[ei];
@@ -518,8 +433,8 @@ void Mesh::GenerateHighOrderNodes()
                   continue;
                thisElem = elem_vector[ee];
 
-               // If this element already proccessed
-               if(thisElem->nodes.Size() == thisElem->getNodesNumberHQ())
+               // If this element has already been proccessed
+               if( thisElem->getStatus() )
                {
                   nedges = thisElem->getEdgesNumber();
                   // Edges of neighbors
@@ -552,16 +467,12 @@ void Mesh::GenerateHighOrderNodes()
          {
             const Node *na = thisElem0->getNode(edgeIndex_loc0[0]);
             const Node *nb = thisElem0->getNode(edgeIndex_loc0[1]);
-            aNode = new Node((long)node_vector.size());
+            aNode = new Node((MyInt)node_vector.size());
             aNode->setX(0.5*(na->X() + nb->X()));
             aNode->setY(0.5*(na->Y() + nb->Y()));
             aNode->setZ(0.5*(na->Z() + nb->Z()));
 
             e_nodes0[edgeIndex_loc0[2]] = aNode;
-
-#ifdef BUILD_MESH_EDGE
-            thisEdge0->setNode(2, aNode);
-#endif
             node_vector.push_back(aNode);
          }
       } //  for(i=0; i<nedges0; i++)
@@ -581,7 +492,7 @@ void Mesh::GenerateHighOrderNodes()
          y0 /= 4.;
          z0 /= 4.;
 
-         aNode = new Node((long)node_vector.size());
+         aNode = new Node((MyInt)node_vector.size());
          aNode->setX(x0);
          aNode->setY(y0);
          aNode->setZ(z0);
@@ -591,15 +502,16 @@ void Mesh::GenerateHighOrderNodes()
       }
       // Set edges and nodes
       thisElem0->setOrder(true);
-      // Resize is true
-      thisElem0->setNodes(e_nodes0, true);
+      //
+      thisElem0->Marking(true);
    }// Over elements
+
    //
-   NodesNumber_Quadratic= (long)node_vector.size();
+   NodesNumber_Quadratic= (MyInt)node_vector.size();
    for(e=0; e<e_size; e++)
    {
       thisElem0 = elem_vector[e];
-      for(i=thisElem0->nnodes; i<thisElem0->nnodesHQ; i++)
+      for(i=thisElem0->getNodesNumber(); i<thisElem0->getNodesNumberHQ(); i++)
       {
          done = false;
          aNode = thisElem0->getNode(i);
@@ -620,15 +532,12 @@ void Mesh::GenerateHighOrderNodes()
    ConnectedNodes(true);
    //ConnectedElements2Node(true);
    //
-   e_nodes0.resize(0);
-
 
    finish = clock();
    cout<<"\n\tCPU time elapsed in generating high oder elements: "
        <<(double)(finish - start) / CLOCKS_PER_SEC<<"s"<<endl;
 
 }
-
 
 void Mesh::ConstructSubDomain_by_Elements(const string fname, const int num_parts, const bool osdom)
 {
@@ -637,7 +546,7 @@ void Mesh::ConstructSubDomain_by_Elements(const string fname, const int num_part
    int dom;
    int max_dom;
    int k,kk;
-   long i,j;
+   MyInt i,j;
    //  int ntags = 3;
 
    fstream gmsh_out;
@@ -668,7 +577,7 @@ void Mesh::ConstructSubDomain_by_Elements(const string fname, const int num_part
       gmsh_out<<"$MeshFormat\n2 0 8\n$EndMeshFormat\n$Nodes"<<endl;
       gmsh_out<<node_vector.size()<<endl;
       Node *node;
-      for(i=0; i<(long)node_vector.size(); i++)
+      for(i=0; i<(MyInt)node_vector.size(); i++)
       {
          gmsh_out<<i+1<<" ";
          node = node_vector[i];
@@ -679,7 +588,7 @@ void Mesh::ConstructSubDomain_by_Elements(const string fname, const int num_part
       //gmsh_out<<"$ENDNOD"<<endl;
       //gmsh_out<<"$ELM"<<endl;
       gmsh_out<<"$EndNodes\n$Elements"<<endl;
-      gmsh_out<<(long)elem_vector.size()<<endl;
+      gmsh_out<<(MyInt)elem_vector.size()<<endl;
    }
 
    //
@@ -693,12 +602,12 @@ void Mesh::ConstructSubDomain_by_Elements(const string fname, const int num_part
    max_dom=0;
    Elem *ele = NULL;
 
-   for(i=0; i<(long)elem_vector.size(); i++)
+   for(i=0; i<(MyInt)elem_vector.size(); i++)
    {
       part_in>>dom>>ws;
       ele = elem_vector[i];
       ele->setDomainIndex(dom);
-//      elem_vector[i]->AllocateLocalIndexVector();
+
       if(dom>max_dom) max_dom = dom;
 
       if(osdom)
@@ -719,25 +628,23 @@ void Mesh::ConstructSubDomain_by_Elements(const string fname, const int num_part
    //
 
    //Output ddc file
-   // long *nod_dom = new long[max_dom];
-   long *ele_dom = new long[max_dom];
+   // MyInt *nod_dom = new MyInt[max_dom];
+   MyInt *ele_dom = new MyInt[max_dom];
    for(k=0; k<max_dom; k++)
    {
       ele_dom[k]=0;
       //nod_dom[k]=0;
-      for(j=0; j<(long)elem_vector.size(); j++)
+      for(j=0; j<(MyInt)elem_vector.size(); j++)
       {
          if(elem_vector[j]->getDomainIndex()==k)
             ele_dom[k] += 1;
       }
    }
 
-
    bool done = false;
-   long n_index=0;
+   MyInt n_index=0;
    vector<size_t> nodes_dom;
    vector<Elem*> eles_dom;
-
 
    //
    for(k=0; k<max_dom; k++)
@@ -746,7 +653,7 @@ void Mesh::ConstructSubDomain_by_Elements(const string fname, const int num_part
       part_out<<"$ELEMENTS "<<ele_dom[k]<<endl;
       nodes_dom.clear();
       eles_dom.clear();
-      for(j=0; j<(long)elem_vector.size(); j++)
+      for(j=0; j<(MyInt)elem_vector.size(); j++)
       {
          ele = elem_vector[j];
          for(kk=0; kk<ele->getNodesNumber(); kk++)
@@ -756,10 +663,10 @@ void Mesh::ConstructSubDomain_by_Elements(const string fname, const int num_part
             ele->setDomNodeIndex(kk, -1);
          }
       }
-      for(j=0; j<(long)elem_vector.size(); j++)
+      for(j=0; j<(MyInt)elem_vector.size(); j++)
       {
          ele = elem_vector[j];
-         //ele->AllocateLocalIndexVector();
+
          if(ele->getDomainIndex()==k)
          {
             for(kk=0; kk<ele->getNodesNumber(); kk++)
@@ -773,8 +680,8 @@ void Mesh::ConstructSubDomain_by_Elements(const string fname, const int num_part
                }
                if(!done)
                {
-                  ele->setDomNodeIndex(kk, (long)nodes_dom.size()); //For test output
-                  ele->setLocalNodeIndex(kk, (long)nodes_dom.size());
+                  ele->setDomNodeIndex(kk, (MyInt)nodes_dom.size()); //For test output
+                  ele->setLocalNodeIndex(kk, (MyInt)nodes_dom.size());
                   nodes_dom.push_back(ele->getNodeIndex(kk));
                }
             }
@@ -782,10 +689,9 @@ void Mesh::ConstructSubDomain_by_Elements(const string fname, const int num_part
             eles_dom.push_back(ele); //TEST OUT
          }
       }
-      part_out<<"$NODES_INNER "<<(long)nodes_dom.size()<<endl;
-      for(j=0; j<(long)nodes_dom.size(); j++)
+      part_out<<"$NODES_INNER "<<(MyInt)nodes_dom.size()<<endl;
+      for(j=0; j<(MyInt)nodes_dom.size(); j++)
          part_out<<nodes_dom[j]<<endl;
-
 
       if(osdom)
       {
@@ -800,10 +706,10 @@ void Mesh::ConstructSubDomain_by_Elements(const string fname, const int num_part
 
          Node *nod = 0;
          //GMSH test_out<<"$NOD"<<endl;
-         //GMSH test_out<<(long)nodes_dom.size()<<endl;
+         //GMSH test_out<<(MyInt)nodes_dom.size()<<endl;
          test_out<<"#0#0#0#1#0.0#0#################################################################"<<endl;
-         test_out<<"0 "<<(long)nodes_dom.size()<<" "<<(long)eles_dom.size()<<endl;
-         for(j=0; j<(long)nodes_dom.size(); j++)
+         test_out<<"0 "<<(MyInt)nodes_dom.size()<<" "<<(MyInt)eles_dom.size()<<endl;
+         for(j=0; j<(MyInt)nodes_dom.size(); j++)
          {
             nod = node_vector[nodes_dom[j]];
             //GMSH  test_out<<j+1<<"  "
@@ -812,8 +718,8 @@ void Mesh::ConstructSubDomain_by_Elements(const string fname, const int num_part
          }
          //GMSH test_out<<"$ENDNOD"<<endl;
          //GMSH test_out<<"$ELE"<<endl;
-         //GMSG test_out<<(long)eles_dom.size()<<endl;
-         for(j=0; j<(long)eles_dom.size(); j++)
+         //GMSG test_out<<(MyInt)eles_dom.size()<<endl;
+         for(j=0; j<(MyInt)eles_dom.size(); j++)
          {
             ele = eles_dom[j];
 
@@ -878,13 +784,13 @@ void Mesh::ConstructSubDomain_by_Nodes(const MeshPartConfig mpc)
    string f_iparts;
    string o_part_msh;
    string fname = mpc.fname;
-   long dom;
+   MyInt dom;
    int k,kk;
-   long i,j;
+   MyInt i,j;
 
    // Number of integer variables of subdomain elements
-   long nmb_element_idxs;
-   long nmb_element_idxs_g;
+   MyInt nmb_element_idxs;
+   MyInt nmb_element_idxs_g;
 
    string deli = " ";
 
@@ -897,24 +803,21 @@ void Mesh::ConstructSubDomain_by_Nodes(const MeshPartConfig mpc)
    vector<string> m_headers;
    vector<size_t> m_header_marker_per_data;
    vector<string> m_datanames;
-   //vector<long> m_ele_idx;
+   //vector<MyInt> m_ele_idx;
    vector<double> m_ele_val;
 
    //
-
-   const long num_headers = 13;
-   long head[13];
-   long ivar[23];
+   const MyInt num_headers = 13;
+   MyInt head[13];
+   MyInt ivar[23];
    // For binary output: all data in on string
-   vector<long> ele_info;
+   vector<MyInt> ele_info;
    // node rank offset
    head[10] = 0;
    // element rank offset
    head[11] = 0;
    // ghost element rank offset
    head[12] = 0;
-
-
 
    if(mpc.mat_fname.size() !=0)
    {
@@ -957,7 +860,7 @@ void Mesh::ConstructSubDomain_by_Nodes(const MeshPartConfig mpc)
                const size_t ne = elem_vector.size();
                for(size_t ie = 0; ie<ne; ie++)
                {
-                  long index;
+                  MyInt index;
                   double m_val;
                   is_mat >> index >> m_val;
                   //m_ele_idx.push_back(index);
@@ -994,11 +897,10 @@ void Mesh::ConstructSubDomain_by_Nodes(const MeshPartConfig mpc)
       exit(1);
    }
 
-
-   const long nn = static_cast<long>(node_vector.size());
+   const MyInt nn = static_cast<MyInt>(node_vector.size());
 
    vector<bool> sdom_marked(nn);
-   vector<long> dom_idx(NodesNumber_Linear);
+   vector<MyInt> dom_idx(NodesNumber_Linear);
 
    // Re-ordered nodes of the whole mesh for ouput
    for(i=0; i<NodesNumber_Linear; i++)
@@ -1061,15 +963,14 @@ void Mesh::ConstructSubDomain_by_Nodes(const MeshPartConfig mpc)
 #endif
 
    //
-
-   long node_id_shift = 0;
-   long nnodes_previous_sdom = 0;
-   vector<long> nnodes_sdom_start(num_parts);
-   vector<long> nnodes_sdom_linear_elements(num_parts);
-   vector<long> nnodes_sdom_quadratic_elements(num_parts);
+   MyInt node_id_shift = 0;
+   MyInt nnodes_previous_sdom = 0;
+   vector<MyInt> nnodes_sdom_start(num_parts);
+   vector<MyInt> nnodes_sdom_linear_elements(num_parts);
+   vector<MyInt> nnodes_sdom_quadratic_elements(num_parts);
    vector<size_t> position_node_file(num_parts);
 
-   const long ne_total = static_cast<long>(elem_vector.size());
+   const MyInt ne_total = static_cast<MyInt>(elem_vector.size());
 
    vector<Node*> sbd_nodes;
    std::vector<std::vector<std::set<ConnEdge> > > vec_neighbors(num_parts); //NW
@@ -1096,14 +997,13 @@ void Mesh::ConstructSubDomain_by_Nodes(const MeshPartConfig mpc)
          }
       }
 
-      nnodes_sdom_linear_elements[idom] = static_cast<long>(sbd_nodes.size());
+      nnodes_sdom_linear_elements[idom] = static_cast<MyInt>(sbd_nodes.size());
       nnodes_sdom_quadratic_elements[idom] = nnodes_sdom_linear_elements[idom];
 
-      long size_sbd_nodes = nnodes_sdom_linear_elements[idom] - nnodes_previous_sdom;
-      long size_sbd_nodes0 = size_sbd_nodes; // Nodes in this domain
-      long size_sbd_nodes_l = size_sbd_nodes; // Nodes in this domain of linear element
-      long size_sbd_nodes_h = size_sbd_nodes; // Nodes in this domain of quadratic element
-
+      MyInt size_sbd_nodes = nnodes_sdom_linear_elements[idom] - nnodes_previous_sdom;
+      MyInt size_sbd_nodes0 = size_sbd_nodes; // Nodes in this domain
+      MyInt size_sbd_nodes_l = size_sbd_nodes; // Nodes in this domain of linear element
+      MyInt size_sbd_nodes_h = size_sbd_nodes; // Nodes in this domain of quadratic element
 
       vector<Elem*> in_subdom_elements;
       vector<Elem*> ghost_subdom_elements;
@@ -1118,10 +1018,9 @@ void Mesh::ConstructSubDomain_by_Nodes(const MeshPartConfig mpc)
       {
          a_node = sbd_nodes[j + nnodes_previous_sdom];
          a_node->index = j + node_id_shift;
-         a_node->local_index = static_cast<long> (a_node->index);
+         a_node->local_index = static_cast<MyInt> (a_node->index);
          a_node ->Marking(true);
       }
-
 
       /// Find the elements in this subdomain.
       for(j=0; j<size_sbd_nodes0; j++)
@@ -1129,7 +1028,7 @@ void Mesh::ConstructSubDomain_by_Nodes(const MeshPartConfig mpc)
          a_node = sbd_nodes[j + nnodes_previous_sdom];
 
          // Search the elements connected to this nodes
-         const long ne_rel = static_cast<long>(a_node->ElementsRelated.size());
+         const MyInt ne_rel = static_cast<MyInt>(a_node->ElementsRelated.size());
          for(k=0; k<ne_rel; k++)
          {
             a_elem = elem_vector[a_node->ElementsRelated[k]];
@@ -1175,11 +1074,11 @@ void Mesh::ConstructSubDomain_by_Nodes(const MeshPartConfig mpc)
             {
                for (size_t ig=0; ig<g_nodes.size(); ig++)
                {
-                  long ig_id = a_elem->getNode(g_nodes[ig])->global_index; //index; //;
-                  long ig_dom = dom_idx[ig_id];
+                  MyInt ig_id = a_elem->getNode(g_nodes[ig])->global_index; //index; //;
+                  MyInt ig_dom = dom_idx[ig_id];
                   for (size_t ing=0; ing<ng_nodes.size(); ing++)
                   {
-                     //long ing_id = a_elem->getNode(ng_nodes[ing])->index; //global_index;
+                     //MyInt ing_id = a_elem->getNode(ng_nodes[ing])->index; //global_index;
                      vec_neighbors[idom][ig_dom].insert(ConnEdge(a_elem->getNode(ng_nodes[ing]), a_elem->getNode(g_nodes[ig]))); // inner node - ghost node
                      //vec_neighbors[ig_dom].insert(ConnEdge(ing_id, ig_id)); // inner node - ghost node
                   }
@@ -1197,31 +1096,39 @@ void Mesh::ConstructSubDomain_by_Nodes(const MeshPartConfig mpc)
       // Add  non ghost nodes in ghost elements as well
       if(useQuadratic)
       {
-         long nei = static_cast<long>(in_subdom_elements.size());
+         MyInt nei = static_cast<MyInt>(in_subdom_elements.size());
          for(j=0; j<nei; j++)
          {
             a_elem = in_subdom_elements[j];
-            for(k=a_elem->nnodes; k<a_elem->nnodesHQ; k++)
+            const int nnodes = a_elem->getNodesNumber();
+            const int nnodesHQ = a_elem->getNodesNumberHQ();
+
+            for(k=nnodes; k<nnodesHQ; k++)
                a_elem->nodes[k]->Marking(false);
          }
 
-         long neg = static_cast<long>(ghost_subdom_elements.size());
+         MyInt neg = static_cast<MyInt>(ghost_subdom_elements.size());
          for(j=0; j<neg; j++)
          {
             a_elem = ghost_subdom_elements[j];
-            for(k=0; k<a_elem->nnodesHQ; k++)
+            const int nnodesHQ = a_elem->getNodesNumberHQ();
+
+            for(k=0; k<nnodesHQ; k++)
                a_elem->nodes[k]->Marking(false);
          }
 
-         long new_node_idx = size_sbd_nodes0 + node_id_shift;
+         MyInt new_node_idx = size_sbd_nodes0 + node_id_shift;
          // Add nodes for quadrtic elements in this subdomain zone
          for(j=0; j<nei; j++)
          {
             a_elem = in_subdom_elements[j];
-            for(k=a_elem->nnodes; k<a_elem->nnodesHQ; k++)
+            const int nnodes = a_elem->getNodesNumber();
+            const int nnodesHQ = a_elem->getNodesNumberHQ();
+
+            for(k=nnodes; k<nnodesHQ; k++)
             {
                a_node = a_elem->nodes[k];
-               i = static_cast<long>(a_elem->nodes[k]->index_org);
+               i = static_cast<MyInt>(a_elem->nodes[k]->index_org);
                if(sdom_marked[i]) // Already in other subdomains
                   continue;
 
@@ -1233,7 +1140,7 @@ void Mesh::ConstructSubDomain_by_Nodes(const MeshPartConfig mpc)
                sdom_marked[i] = true;
 
                a_node->index = new_node_idx;
-               a_node->local_index = static_cast<long>(a_node->index);
+               a_node->local_index = static_cast<MyInt>(a_node->index);
                sbd_nodes.push_back(a_node);
                a_node->Marking(true);
                new_node_idx++;
@@ -1247,12 +1154,14 @@ void Mesh::ConstructSubDomain_by_Nodes(const MeshPartConfig mpc)
          for(j=0; j<neg; j++)
          {
             a_elem = ghost_subdom_elements[j];
+            const int nnodes = a_elem->getNodesNumber();
+            const int nnodesHQ = a_elem->getNodesNumberHQ();
 
-            for(k=a_elem->nnodes; k<a_elem->nnodesHQ; k++)
+            for(k=nnodes; k<nnodesHQ; k++)
             {
                a_node = a_elem->nodes[k];
                // Since a_elem->nodes_index[k] is not touched
-               i = static_cast<long>(a_elem->nodes[k]->index_org);
+               i = static_cast<MyInt>(a_elem->nodes[k]->index_org);
                if(sdom_marked[i]) // Already in other subdomains
                   continue;
 
@@ -1263,7 +1172,7 @@ void Mesh::ConstructSubDomain_by_Nodes(const MeshPartConfig mpc)
                sdom_marked[i] = true;
 
                a_node->index = new_node_idx;
-               a_node->local_index = static_cast<long>(a_node->index);
+               a_node->local_index = static_cast<MyInt>(a_node->index);
                sbd_nodes.push_back(a_node);
                a_node->Marking(true);
                new_node_idx++;
@@ -1274,8 +1183,9 @@ void Mesh::ConstructSubDomain_by_Nodes(const MeshPartConfig mpc)
          for(j=0; j<neg; j++)
          {
             a_elem = ghost_subdom_elements[j];
+            const int nnodesHQ = a_elem->getNodesNumberHQ();
 
-            for(k=0; k<a_elem->nnodesHQ; k++)
+            for(k=0; k<nnodesHQ; k++)
             {
                if(a_elem->nodes[k]->getStatus())
                {
@@ -1284,7 +1194,7 @@ void Mesh::ConstructSubDomain_by_Nodes(const MeshPartConfig mpc)
             }
 
          }
-         nnodes_sdom_quadratic_elements[idom] = static_cast<long>(sbd_nodes.size());
+         nnodes_sdom_quadratic_elements[idom] = static_cast<MyInt>(sbd_nodes.size());
          size_sbd_nodes0 = nnodes_sdom_quadratic_elements[idom]  - nnodes_previous_sdom;
          size_sbd_nodes_h = size_sbd_nodes0;
       }
@@ -1293,7 +1203,7 @@ void Mesh::ConstructSubDomain_by_Nodes(const MeshPartConfig mpc)
       int sdom_nnodes = size_sbd_nodes_l;
       //-----------------------------------------------
       // Add nodes in ghost elements
-      const long ne_g = static_cast<long>(ghost_subdom_elements.size());
+      const MyInt ne_g = static_cast<MyInt>(ghost_subdom_elements.size());
       for(j=0; j<ne_g; j++)
       {
          a_elem = ghost_subdom_elements[j];
@@ -1306,7 +1216,7 @@ void Mesh::ConstructSubDomain_by_Nodes(const MeshPartConfig mpc)
             a_elem->nodes[a_elem->ghost_nodes[k]]->Marking(true);
       }
       //
-      long new_node_idx = size_sbd_nodes0 + node_id_shift;
+      MyInt new_node_idx = size_sbd_nodes0 + node_id_shift;
       for(j=0; j<ne_g; j++)
       {
          a_elem = ghost_subdom_elements[j];
@@ -1326,23 +1236,22 @@ void Mesh::ConstructSubDomain_by_Nodes(const MeshPartConfig mpc)
 
       }
 
-      size_sbd_nodes = static_cast<long>(sbd_nodes.size()) - nnodes_previous_sdom;
-
+      size_sbd_nodes = static_cast<MyInt>(sbd_nodes.size()) - nnodes_previous_sdom;
 
       // Count the total integer variables of this subdomain
-      const long nei = static_cast<long>(in_subdom_elements.size());
+      const MyInt nei = static_cast<MyInt>(in_subdom_elements.size());
       nmb_element_idxs =  3*nei;
       for(j=0; j<nei; j++)
       {
          nmb_element_idxs += in_subdom_elements[j]->getNodesNumber(useQuadratic);
       }
-      const long neg = static_cast<long>( ghost_subdom_elements.size());
+      const MyInt neg = static_cast<MyInt>( ghost_subdom_elements.size());
       //  mat index, element type, number of element, number of ghost nodes, number of ghost nodes of high order elements
       nmb_element_idxs_g = 5*neg;
       for(j=0; j<neg; j++)
       {
          nmb_element_idxs_g += ghost_subdom_elements[j]->getNodesNumber(useQuadratic);
-         nmb_element_idxs_g += static_cast<long>(ghost_subdom_elements[j]->ghost_nodes.size());
+         nmb_element_idxs_g += static_cast<MyInt>(ghost_subdom_elements[j]->ghost_nodes.size());
       }
 
       string dom_str = number2str(idom);
@@ -1362,9 +1271,9 @@ void Mesh::ConstructSubDomain_by_Nodes(const MeshPartConfig mpc)
       os_subd<<name_f<<endl;
 #endif
       // Number of active elements
-      const long nei_size = static_cast<long>(in_subdom_elements.size());
-      const long offset_e = nei_size + nmb_element_idxs;
-      const long offset_e_g = ne_g+ nmb_element_idxs_g;
+      const MyInt nei_size = static_cast<MyInt>(in_subdom_elements.size());
+      const MyInt offset_e = nei_size + nmb_element_idxs;
+      const MyInt offset_e_g = ne_g+ nmb_element_idxs_g;
 
       if(!binary_output)
       {
@@ -1386,12 +1295,12 @@ void Mesh::ConstructSubDomain_by_Nodes(const MeshPartConfig mpc)
          head[8] = nmb_element_idxs;
          head[9] = nmb_element_idxs_g;
 
-         //os_bin_cfg.write( reinterpret_cast <const char*> (head), num_headers*sizeof(long));
-         fwrite(head, 1, num_headers*sizeof(long), of_bin_cfg);
+         //os_bin_cfg.write( reinterpret_cast <const char*> (head), num_headers*sizeof(MyInt));
+         fwrite(head, 1, num_headers*sizeof(MyInt), of_bin_cfg);
 
          head[10] += size_sbd_nodes*sizeof(Node_Str);
-         head[11] += offset_e*sizeof(long);
-         head[12] += offset_e_g*sizeof(long);
+         head[11] += offset_e*sizeof(MyInt);
+         head[12] += offset_e_g*sizeof(MyInt);
 
       }
 
@@ -1404,7 +1313,7 @@ void Mesh::ConstructSubDomain_by_Nodes(const MeshPartConfig mpc)
       }
 
       //os_subd<<"Elements"<<endl;
-      long counter = 0;
+      MyInt counter = 0;
       if(binary_output)
       {
          ele_info.clear();
@@ -1425,16 +1334,16 @@ void Mesh::ConstructSubDomain_by_Nodes(const MeshPartConfig mpc)
                counter++;
             }
 
-            //os_bin_ele.write( reinterpret_cast <const char*> (ivar), nvar*sizeof(long));
-            //fwrite(ivar, 1, nvar*sizeof(long), of_bin_ele);
+            //os_bin_ele.write( reinterpret_cast <const char*> (ivar), nvar*sizeof(MyInt));
+            //fwrite(ivar, 1, nvar*sizeof(MyInt), of_bin_ele);
          }
          else
             in_subdom_elements[j]->WriteSubDOM(os_subd, node_id_shift, useQuadratic);
       }
-      // in one long string buffer
+      // in one MyInt string buffer
       if(binary_output)
       {
-         fwrite(&ele_info[0], 1, (offset_e)*sizeof(long), of_bin_ele);
+         fwrite(&ele_info[0], 1, (offset_e)*sizeof(MyInt), of_bin_ele);
          ele_info.clear();
 
       }
@@ -1460,8 +1369,8 @@ void Mesh::ConstructSubDomain_by_Nodes(const MeshPartConfig mpc)
             ele_info[j] = counter;
 
             const int nvar = a_elem->getDataArray4BinaryOut(ivar, node_id_shift, useQuadratic);
-            //os_bin_ele_g.write( reinterpret_cast <const char*> (ivar), nvar*sizeof(long));
-            //fwrite(ivar, 1, nvar*sizeof(long), of_bin_ele);
+            //os_bin_ele_g.write( reinterpret_cast <const char*> (ivar), nvar*sizeof(MyInt));
+            //fwrite(ivar, 1, nvar*sizeof(MyInt), of_bin_ele);
 
             for(int m=0; m<nvar; m++)
             {
@@ -1475,8 +1384,8 @@ void Mesh::ConstructSubDomain_by_Nodes(const MeshPartConfig mpc)
             {
                ivar[kk+2] = a_elem->ghost_nodes[kk];
             }
-            // os_bin_ele_g.write( reinterpret_cast <const char*> (ivar), (ngh_nodes+2)*sizeof(long));
-            // fwrite(ivar, 1, (ngh_nodes+2)*sizeof(long), of_bin_ele);
+            // os_bin_ele_g.write( reinterpret_cast <const char*> (ivar), (ngh_nodes+2)*sizeof(MyInt));
+            // fwrite(ivar, 1, (ngh_nodes+2)*sizeof(MyInt), of_bin_ele);
             for(int m=0; m<ngh_nodes+2; m++)
             {
                ele_info[counter] = ivar[m];
@@ -1499,11 +1408,10 @@ void Mesh::ConstructSubDomain_by_Nodes(const MeshPartConfig mpc)
       // in one long string buffer
       if(binary_output)
       {
-         fwrite(&ele_info[0], 1, (offset_e_g)*sizeof(long), of_bin_ele_g);
+         fwrite(&ele_info[0], 1, (offset_e_g)*sizeof(MyInt), of_bin_ele_g);
          ele_info.clear();
 
       }
-
 
       //----------------------------------------------------------------------------------
       /// Material data partitioning
@@ -1519,7 +1427,7 @@ void Mesh::ConstructSubDomain_by_Nodes(const MeshPartConfig mpc)
                os_mat<<m_headers[mh]<<endl;
             }
 
-            const long e_shift = ne_total*mm;
+            const MyInt e_shift = ne_total*mm;
             for(j=0; j<nei_size; j++)
             {
                const size_t entry_index = in_subdom_elements[j]->getIndex() + e_shift;
@@ -1561,7 +1469,7 @@ void Mesh::ConstructSubDomain_by_Nodes(const MeshPartConfig mpc)
             {
                // Partition
                os<<"SCALARS "<< m_headers[m_header_marker_per_data[mm]+4] <<" double 1\nLOOKUP_TABLE default"<<endl;
-               const long e_shift = ne_total*mm;
+               const MyInt e_shift = ne_total*mm;
                for(i=0; i<nei_size; i++)
                {
                   const size_t entry_index = in_subdom_elements[i]->getIndex() + e_shift;
@@ -1584,7 +1492,7 @@ void Mesh::ConstructSubDomain_by_Nodes(const MeshPartConfig mpc)
             {
                // Partition
                os<<"SCALARS "<< m_headers[m_header_marker_per_data[mm]+4] <<" double 1\nLOOKUP_TABLE default"<<endl;
-               const long e_shift = ne_total*mm;
+               const MyInt e_shift = ne_total*mm;
                for(i=0; i<ne_g; i++)
                {
                   const size_t entry_index = ghost_subdom_elements[i]->getIndex() + e_shift;
@@ -1599,7 +1507,7 @@ void Mesh::ConstructSubDomain_by_Nodes(const MeshPartConfig mpc)
       }
 
       node_id_shift += size_sbd_nodes0;
-      nnodes_previous_sdom = static_cast<long>(sbd_nodes.size());
+      nnodes_previous_sdom = static_cast<MyInt>(sbd_nodes.size());
       //sbd_nodes.clear();
       in_subdom_elements.clear();
       ghost_subdom_elements.clear();
@@ -1647,14 +1555,14 @@ void Mesh::ConstructSubDomain_by_Nodes(const MeshPartConfig mpc)
    // For that in one long string buffer
    vector<Node_Str> nodes_buffer;
 
-   long end = 0;
+   MyInt end = 0;
    for(int idom=0; idom<num_parts; idom++)
    {
-      const long start = nnodes_sdom_start[idom];
+      const MyInt start = nnodes_sdom_start[idom];
       if(idom < num_parts-1)
          end = nnodes_sdom_start[idom+1];
       else
-         end = static_cast<long>(sbd_nodes.size());
+         end = static_cast<MyInt>(sbd_nodes.size());
 
       if(!binary_output)
          os_subd.seekp(position_node_file[idom]);
@@ -1676,7 +1584,7 @@ void Mesh::ConstructSubDomain_by_Nodes(const MeshPartConfig mpc)
             // a_node->WriteBIN(os_bin_nod);
 
             Node_Str nd;
-            nd.id = static_cast<long> (a_node->index);
+            nd.id = static_cast<MyInt> (a_node->index);
             nd.x = a_node->Coordinate[0];
             nd.y = a_node->Coordinate[1];
             nd.z = a_node->Coordinate[2];
@@ -1693,11 +1601,9 @@ void Mesh::ConstructSubDomain_by_Nodes(const MeshPartConfig mpc)
       // For that in one long string buffer
       if(binary_output)
       {
-         const long nsize = end - start;
+         const MyInt nsize = end - start;
          fwrite(&nodes_buffer[0], sizeof(Node_Str), nsize, of_bin_nod);
       }
-
-
    }
 
    if(binary_output)
@@ -1737,8 +1643,8 @@ void Mesh::ConstructSubDomain_by_Nodes(const MeshPartConfig mpc)
       os<<" $NODES\n"<<NodesNumber_Linear<<endl;
       for(int idom=0; idom<num_parts; idom++)
       {
-         const long start = nnodes_sdom_start[idom];
-         const long end = nnodes_sdom_linear_elements[idom];
+         const MyInt start = nnodes_sdom_start[idom];
+         const MyInt end = nnodes_sdom_linear_elements[idom];
          for(i=start; i<end; i++)
          {
             a_node = sbd_nodes[i];
@@ -1770,11 +1676,11 @@ void Mesh::ConstructSubDomain_by_Nodes(const MeshPartConfig mpc)
       setw(14);
       os.precision(14);
 
-      size_t quad_nn = 0;
+      MyInt quad_nn = 0;
       for(int idom=0; idom<num_parts; idom++)
       {
-         const long start = nnodes_sdom_start[idom];
-         const long end = nnodes_sdom_linear_elements[idom];
+         const MyInt start = nnodes_sdom_start[idom];
+         const MyInt end = nnodes_sdom_linear_elements[idom];
          for(i=start; i<end; i++)
          {
             a_node = sbd_nodes[i];
@@ -1801,7 +1707,6 @@ void Mesh::ConstructSubDomain_by_Nodes(const MeshPartConfig mpc)
    os.clear();
    os.close();
 
-
    sbd_nodes.clear();
 }
 
@@ -1821,7 +1726,6 @@ void  Mesh::WriteVTK_Nodes(std::ostream& os)
       a_node = node_vector[i];
       os<<a_node->X()<<" "<<a_node->Y()<<" "<<a_node->Z()<<endl;
    }
-
 }
 
 // 03.2012. WW
@@ -1840,13 +1744,11 @@ void Mesh::WriteVTK_Nodes(std::ostream& os, std::vector<Node*>& nod_vec, const s
       a_node = nod_vec[i];
       os<<a_node->X()<<" "<<a_node->Y()<<" "<<a_node->Z()<<endl;
    }
-
 }
-
 
 // 02.2012. WW
 void  Mesh::WriteVTK_Elements_of_Subdomain(std::ostream& os, std::vector<Elem*>& ele_vec,
-      const int sbd_index, const long node_shift)
+      const int sbd_index, const MyInt node_shift)
 {
    size_t i;
    int j, k;
@@ -1911,12 +1813,11 @@ void  Mesh::WriteVTK_Elements_of_Subdomain(std::ostream& os, std::vector<Elem*>&
       for(i=0; i<ne0; i++)
          os<<sbd_index<<endl;
    }
-
 }
 
 void Mesh::Write2METIS(ostream& os)
 {
-   os<<(long)elem_vector.size()<<" ";
+   os<<(MyInt)elem_vector.size()<<" ";
 
 #ifdef METIS4_0
    int e_type =0;
@@ -1944,16 +1845,14 @@ void Mesh::Write2METIS(ostream& os)
    os<<e_type;
 #endif
    os<<endl;
-   for(long i=0; i<(long)elem_vector.size(); i++)
+   for(MyInt i=0; i<(MyInt)elem_vector.size(); i++)
       elem_vector[i]->Write_index(os);
 }
 
-
-
 // Read grid for test purpose
-void Mesh::ReadGrid(istream& is)
+void Mesh::ReadGrid(istream& is, const bool high_order)
 {
-   long i, ne, nn, counter;
+   MyInt i, ne, nn, counter;
    int ibuff;
    double x,y,z;
    string buffer;
@@ -1970,12 +1869,13 @@ void Mesh::ReadGrid(istream& is)
 
    // Read Nodes
    counter = 0;
+   node_vector.resize(nn);
    for(i=0; i<nn; i++)
    {
       is>>ibuff>>x>>y>>z>>ws;
       Node* newNode = new Node(ibuff,x,y,z);
       newNode->Marking(true);
-      node_vector.push_back(newNode);
+      node_vector[counter] = newNode;
       counter++;
    }
    if(counter!=nn)
@@ -1988,12 +1888,13 @@ void Mesh::ReadGrid(istream& is)
 
    // Read Elements
    counter = 0;
+   elem_vector.resize(ne);
    for(i=0; i<ne; i++)
    {
       Elem* newElem = new Elem(i);
-      newElem->Read(is, this, 1);
+      newElem->Read(is, this, 1, high_order);
       newElem->Marking(true);
-      elem_vector.push_back(newElem);
+      elem_vector[counter] = newElem;
       counter++;
    }
    if(counter!=ne)
@@ -2001,21 +1902,19 @@ void Mesh::ReadGrid(istream& is)
       cout<<"Error: number elements do not match"<<endl;
       exit(1);
    }
-
 //   position = is.tellg();
 }
 
-
-void Mesh::ReadGridGeoSys(istream& is)
+void Mesh::ReadGridGeoSys(istream& is, const bool high_order)
 {
    string sub_line;
    string line_string;
    bool new_keyword = false;
    string hash("#");
    string sub_string,sub_string1;
-   long i, ibuff;
-   long no_elements;
-   long no_nodes;
+   MyInt i, ibuff;
+   MyInt no_elements;
+   MyInt no_nodes;
    double x,y,z;
    Node* newNode = NULL;
    Elem* newElem = NULL;
@@ -2034,18 +1933,20 @@ void Mesh::ReadGridGeoSys(istream& is)
       {
            new_keyword = true;
            break;
-         }
-         */
+       }
+      */
       //....................................................................
       //....................................................................
       if(line_string.find("$NODES")!=string::npos)   // subkeyword found
       {
          is  >> no_nodes>>ws;
+
+         node_vector.resize(no_nodes);
          for(i=0; i<no_nodes; i++)
          {
             is>>ibuff>>x>>y>>z>>ws;
             newNode = new Node(ibuff,x,y,z);
-            node_vector.push_back(newNode);
+            node_vector[i] = newNode;
          }
          continue;
       }
@@ -2053,12 +1954,15 @@ void Mesh::ReadGridGeoSys(istream& is)
       if(line_string.find("$ELEMENTS")!=string::npos)   // subkeyword found
       {
          is >> no_elements>>ws;
+
+         elem_vector.resize(no_elements);
+
          for(i=0; i<no_elements; i++)
          {
             newElem = new Elem(i);
-            newElem->Read(is, this, 0);
+            newElem->Read(is, this, 0, high_order);
             newElem->Marking(true);
-            elem_vector.push_back(newElem);
+            elem_vector[i] = newElem;
          }
          continue;
       }
