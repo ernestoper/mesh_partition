@@ -213,6 +213,11 @@ class Elem:public Grain
          return neighbors;
       }
 
+      Elem* getNeighbor(const int local_id) const
+      {
+         return neighbors[local_id];
+      }
+
       //Domain partition
       MyInt getDomNodeIndex(const int loc_index)
       {
@@ -285,8 +290,8 @@ class Elem:public Grain
       Node **nodes;
       Elem **neighbors;
 
-      int nnodes_gl; //> number of ghost nodes for linear element
-      std::vector<int>  ghost_nodes;
+      int nnodes_ngl; //> number of non ghost nodes for linear element
+      std::vector<int>  non_ghost_nodes;
 
       // Private methods
       int getElementFaces1D(int *FaceNode);

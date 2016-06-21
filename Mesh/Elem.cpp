@@ -44,9 +44,9 @@ int EdgeLocalNodeIndex [] =
    0, 1, 4,
    1, 2, 5,
    2, 0, 6,
-   0, 3, 7,
-   1, 3, 8,
-   2, 3, 9,
+   0, 3, 9,
+   1, 3, 7,
+   2, 3, 8,
    //prism, 9 edges, 27 entries. sh: 78
    0, 1, 6,
    1, 2, 7,
@@ -56,7 +56,7 @@ int EdgeLocalNodeIndex [] =
    5, 3, 11,
    0, 3, 12,
    1, 4, 13,
-   2, 5, 15,
+   2, 5, 14,
    //pyramid, 8 edges, 24 entries. sh: 105
    0, 1, 5,
    1, 2, 6,
@@ -99,7 +99,7 @@ Elem::~Elem()
       neighbors = NULL;
    }
 
-   ghost_nodes.resize(0);
+   non_ghost_nodes.resize(0);
 }
 
 //    WW. 06.2005
@@ -155,7 +155,7 @@ void Elem::Read(istream& is,  Mesh_Group::Mesh *mesh, int fileType, const bool h
    // 1 Reading element type data
    switch(fileType)
    {
-         //....................................................................
+      //....................................................................
       case 0: // msh
          is>>index>>PatchIndex;
          is>>buffer;
@@ -178,7 +178,7 @@ void Elem::Read(istream& is,  Mesh_Group::Mesh *mesh, int fileType, const bool h
          else if(name.find("pyra")!=string::npos)
             ele_Type = pyramid;
          break;
-         //....................................................................
+      //....................................................................
       case 1: // rfi
          is>>index>>PatchIndex>>name;
          if(name.find("line")!=string::npos)
@@ -196,7 +196,7 @@ void Elem::Read(istream& is,  Mesh_Group::Mesh *mesh, int fileType, const bool h
          else if(name.find("pyra")!=string::npos)
             ele_Type = pyramid;
          break;
-         //....................................................................
+      //....................................................................
       case 2: // gmsh
          int gmsh_patch_index;
          is>>index>>et>>gmsh_patch_index>>idummy>>nnodes;
@@ -229,11 +229,11 @@ void Elem::Read(istream& is,  Mesh_Group::Mesh *mesh, int fileType, const bool h
          }
          index--;
          break;
-         //....................................................................
+      //....................................................................
       case 3: // GMS
          ele_Type = tri;
          break;
-         //....................................................................
+      //....................................................................
       case 4: // SOL
          ele_Type = tri;
          break;
@@ -250,7 +250,7 @@ void Elem::Read(istream& is,  Mesh_Group::Mesh *mesh, int fileType, const bool h
    MyInt nidx = 0;
    switch(fileType)
    {
-         //....................................................................
+      //....................................................................
       case 0: // msh
          for(int i=0; i<nnodes; i++)
          {
@@ -258,7 +258,7 @@ void Elem::Read(istream& is,  Mesh_Group::Mesh *mesh, int fileType, const bool h
             nodes[i] = mesh->node_vector[nidx];
          }
          break;
-         //....................................................................
+      //....................................................................
       case 1: // rfi
          for(int i=0; i<nnodes; i++)
          {
@@ -266,7 +266,7 @@ void Elem::Read(istream& is,  Mesh_Group::Mesh *mesh, int fileType, const bool h
             nodes[i] = mesh->node_vector[nidx];
          }
          break;
-         //....................................................................
+      //....................................................................
       case 2: // gmsh
          for(int i=0; i<nnodes; i++)
          {
@@ -274,7 +274,7 @@ void Elem::Read(istream& is,  Mesh_Group::Mesh *mesh, int fileType, const bool h
             nodes[i] = mesh->node_vector[nidx-1];
          }
          break;
-         //....................................................................
+      //....................................................................
       case 3: // GMS
          for(int i=0; i<nnodes; i++)
          {
@@ -282,7 +282,7 @@ void Elem::Read(istream& is,  Mesh_Group::Mesh *mesh, int fileType, const bool h
             nodes[i] = mesh->node_vector[nidx-1];
          }
          break;
-         //....................................................................
+      //....................................................................
       case 4: // SOL
          for(int i=0; i<nnodes; i++)
          {
@@ -513,7 +513,7 @@ void Elem::WriteIndex(ostream& os) const
 void Elem::Write_index(ostream& os) const
 {
    string deli = " ";
-   for(int i=0; i<getNodesNumber(); i++)
+   for(int i=0; i<getNodesNumber(quadratic); i++)
       os<<nodes[i]->index+1<<deli;
    os<<endl;
 }
@@ -752,8 +752,8 @@ int Elem::getElementFacesTet(const int Face, int *FaceNode)
          if(quadratic)
          {
             FaceNode[3] = 5 ;
-            FaceNode[4] = 9;
-            FaceNode[5] = 8;
+            FaceNode[4] = 8;
+            FaceNode[5] = 7;
          }
          break;
       case 1:
@@ -762,9 +762,9 @@ int Elem::getElementFacesTet(const int Face, int *FaceNode)
          FaceNode[2] = 0;
          if(quadratic)
          {
-            FaceNode[3] = 9 ;
+            FaceNode[3] = 8 ;
             FaceNode[4] = 6;
-            FaceNode[5] = 7;
+            FaceNode[5] = 9;
          }
          break;
       case 2:
@@ -773,8 +773,8 @@ int Elem::getElementFacesTet(const int Face, int *FaceNode)
          FaceNode[2] = 0;
          if(quadratic)
          {
-            FaceNode[3] = 8 ;
-            FaceNode[4] = 7;
+            FaceNode[3] = 7 ;
+            FaceNode[4] = 9;
             FaceNode[5] = 4;
          }
          break;
@@ -859,7 +859,7 @@ int Elem::getElementFacesPri(const int Face, int *FaceNode)
             FaceNode[4] = 14 ;
             FaceNode[5] =  8;
             FaceNode[6] = 12;
-            FaceNode[7] = 10;
+            FaceNode[7] = 11;
             nn = 8;
          }
          break;
@@ -997,7 +997,6 @@ int Elem::getElementFaceNodes(const int Face, int *FacesNode)
    }
    return 0;
 }
-
 
 
 }//end namespace
