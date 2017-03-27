@@ -1,12 +1,22 @@
 # partmesh
 
 ==============
-A tool for preparing the partitioned mesh for OpenGeoSys (OGS) 5 (https://github.com/ufz/ogs5) for parallel computing. METIS is used as the partitioning application. Once the source code is compiled, one gets two executable files, partmesh and mpmetis.
+A tool for preparing the partitioned mesh for OpenGeoSys (OGS) 5 (https://github.com/ufz/ogs5) for parallel computing. METIS is used as the partitioning application. Once the source code is compiled, one gets two executable files, partmesh and mpmetis. OGS5 must be compiled with a Cmake option of ``-DOGS_CONFIG=MPI`` or ``-DOGS_CONFIG=PETSC`` for the latest version, or an option of ``-DOGS_FEM_MPI=ON`` or ``-DOGS_FEM_PETSC=ON``  for the old version.
+
+## Compile
+1) get the source code by command 
+  ```git clone https://github.com/ufz/mesh_partition.git```
+2) change directory to ``mesh_partition``
+3) get the submodule of METIS by commands
+  ```git submodule  init && git submodule update```
+4) run cmake and compile the source code
 
 ## Usage:
+
 Assuming that a mesh save in file foo.msh is going to be partitioned, a partitioning can be conducted as follows for two different OGS 5 compilations for parallel FEM computing.
 
-###### Compiled with Cmake option ``-DOGS_CONFIG=MPI`` or ``-DOGS_FEM_MPI=ON`` for old version
+###### For OGS5 Compiled with Cmake option ``-DOGS_CONFIG=MPI`` or ``-DOGS_FEM_MPI=ON`` for old version
+
 1. Convert the OGS mesh data to METIS input data
   
       ``partmesh --ogs2metis foo``
@@ -24,7 +34,7 @@ Assuming that a mesh save in file foo.msh is going to be partitioned, a partitio
     
     Note, in this step the command must be run with its full path.
 
-###### Compiled with Cmake option ``-DOGS_CONFIG=PETSC`` or ``-DOGS_FEM_PETSC=ON`` for old version
+###### For OGS5 Compiled with Cmake option ``-DOGS_CONFIG=PETSC`` or ``-DOGS_FEM_PETSC=ON`` for old version
 
 1. Convert the OGS mesh data to METIS input data
   
@@ -51,7 +61,5 @@ Assuming that a mesh save in file foo.msh is going to be partitioned, a partitio
       Option ``-odom`` can be used here to output the partitioned mesh data into VTK files for visualization.
     
     Note, in this step the command must be run with its full path.
-
-Always, the full options of the tool can be displayed by run command
-
-      ``partmesh --help`` 
+    
+    Always, the full options of the tool can be displayed by run command ``partmesh --help``. 
